@@ -32,6 +32,8 @@ pnpm build
 pnpm start
 ```
 
+After `pnpm start`, the same URL serves the production build.
+
 ## Using it
 
 The tap cards are left to right, same as the handles. A board holds as many beers as the selected display allows (Fraimic: four across, one row).
