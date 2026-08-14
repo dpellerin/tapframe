@@ -6,6 +6,8 @@ Tapframe is a beer tap menu that lives on an e-ink display. I have a Fraimic, so
 
 If you write a display module, I’d love to include it here.
 
+![Tapframe on a Fraimic](docs/tapframe.jpg)
+
 Cheers!
 
 ## Requirements
