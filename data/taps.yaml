@@ -1,0 +1,15 @@
+title: On tap
+subtitle: ""
+taps:
+  - name: Helles
+    style: Lager
+    abv: 4.8
+    description: Crisp and easy. The weeknight beer.
+  - name: House Pale
+    style: Pale Ale
+    abv: 5.4
+    description: Citrus, not bitter.
+  - name: Dark Mild
+    style: Mild
+    abv: 3.6
+    description: Soft, chocolate, low lift.

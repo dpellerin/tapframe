@@ -1,0 +1,4 @@
+adapter: fraimic
+size: standard
+fields:
+  host: fraimic.local
