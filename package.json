@@ -11,7 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "dev:setup": "scripts/tapframe dev-data",
-    "deploy": "scripts/tapframe deploy",
+    "production:deploy": "scripts/tapframe deploy",
     "production:install": "scripts/tapframe install",
     "production:rollback": "scripts/tapframe rollback",
     "production:status": "scripts/tapframe status",

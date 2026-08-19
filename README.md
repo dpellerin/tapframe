@@ -46,7 +46,7 @@ One-time installation:
 
 ```bash
 pnpm production:install
-pnpm deploy
+pnpm production:deploy
 ```
 
 Deployments require a clean `main` branch. They build the exact commit in a
@@ -55,7 +55,7 @@ atomically activate the release, and roll back automatically if the health
 check fails.
 
 ```bash
-pnpm deploy
+pnpm production:deploy
 pnpm production:status
 pnpm production:logs
 pnpm production:rollback
