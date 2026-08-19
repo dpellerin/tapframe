@@ -1,0 +1,21 @@
+[Unit]
+Description=Tapframe
+ConditionPathExists=%h/.local/share/tapframe/current/server.js
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/tapframe/current
+Environment=NODE_ENV=production
+Environment=HOSTNAME=0.0.0.0
+Environment=PORT=3000
+Environment=TAPFRAME_DATA_DIR=%h/.local/share/tapframe/data
+EnvironmentFile=-%h/.config/tapframe/tapframe.env
+ExecStart=/usr/bin/mise exec -- node server.js
+Restart=always
+RestartSec=3
+KillSignal=SIGTERM
+TimeoutStopSec=30
+NoNewPrivileges=true
+
+[Install]
+WantedBy=default.target

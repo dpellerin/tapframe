@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# local development data
+/.dev/
+
 # next.js
 /.next/
 /out/

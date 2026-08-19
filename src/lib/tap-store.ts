@@ -3,6 +3,8 @@ import "server-only";
 import { mkdir, readdir, readFile, unlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
+import { atomicWriteFile } from "./atomic-write";
+import { resolveDataDir } from "./data-dir";
 import {
   DEFAULT_TITLE,
   LOGO_PREFIX,
@@ -11,19 +13,22 @@ import {
   type Menu,
 } from "./taps";
 
-export function defaultDataDir(): string {
-  return path.join(process.cwd(), "data");
-}
-
-export function createTapStore(dataDir: string) {
-  const tapsFile = path.join(dataDir, "taps.yaml");
-  const logosDir = path.join(dataDir, "logos");
+export function createTapStore(dataDir: string | (() => string)) {
+  const paths = () => {
+    const resolved = typeof dataDir === "function" ? dataDir() : dataDir;
+    return {
+      dataDir: resolved,
+      tapsFile: path.join(resolved, "taps.yaml"),
+      logosDir: path.join(resolved, "logos"),
+    };
+  };
 
   return {
     async load(): Promise<Menu> {
+      const { tapsFile } = paths();
       let text: string;
       try {
-        text = await readFile(tapsFile, "utf8");
+        text = await readFile(/* turbopackIgnore: true */ tapsFile, "utf8");
       } catch (error) {
         if (isNotFound(error)) {
           return { title: DEFAULT_TITLE, subtitle: "", taps: [] };
@@ -50,6 +55,7 @@ export function createTapStore(dataDir: string) {
     },
 
     async save(menu: Menu): Promise<void> {
+      const { dataDir, tapsFile } = paths();
       const result = parseMenu(menu);
       if (!result.ok) {
         throw new Error(result.error);
@@ -75,10 +81,11 @@ export function createTapStore(dataDir: string) {
         },
         { lineWidth: 0 },
       );
-      await writeFile(tapsFile, body, "utf8");
+      await atomicWriteFile(tapsFile, body);
     },
 
     async saveLogo(originalName: string, bytes: Uint8Array): Promise<string> {
+      const { logosDir } = paths();
       await mkdir(logosDir, { recursive: true });
       const ext = safeExtension(originalName);
       const filename = `${Date.now()}-${randomSuffix()}${ext}`;
@@ -87,9 +94,10 @@ export function createTapStore(dataDir: string) {
     },
 
     async listLogos(): Promise<string[]> {
+      const { logosDir } = paths();
       let names: string[];
       try {
-        names = await readdir(logosDir);
+        names = await readdir(/* turbopackIgnore: true */ logosDir);
       } catch (error) {
         if (isNotFound(error)) {
           return [];
@@ -112,6 +120,7 @@ export function createTapStore(dataDir: string) {
     },
 
     async deleteLogo(storedPath: string): Promise<boolean> {
+      const { logosDir } = paths();
       const filename = logoFilename(storedPath);
       if (!filename) {
         return false;
@@ -128,6 +137,7 @@ export function createTapStore(dataDir: string) {
     },
 
     async readLogo(storedPath: string): Promise<Buffer | null> {
+      const { logosDir } = paths();
       const filename = logoFilename(storedPath);
       if (!filename) {
         return null;
@@ -168,4 +178,4 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
-export const defaultTapStore = createTapStore(defaultDataDir());
+export const defaultTapStore = createTapStore(resolveDataDir);

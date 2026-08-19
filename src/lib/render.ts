@@ -1,4 +1,3 @@
-import path from "node:path";
 import { Resvg } from "@resvg/resvg-js";
 import sharp from "sharp";
 import {
@@ -6,6 +5,7 @@ import {
   boardCapacity,
 } from "./display/layout";
 import type { BoardLayout } from "./display/types";
+import { rendererFontFiles } from "./renderer-assets";
 import type { Tap } from "./taps";
 
 export type MenuCanvas = {
@@ -28,13 +28,7 @@ const RULE = "#d4cfc4";
 const SERIF = "Source Serif 4";
 const SANS = "Source Sans 3";
 
-const FONT_DIR = path.join(process.cwd(), "src/lib/fonts");
-const FONT_FILES = [
-  path.join(FONT_DIR, "SourceSerif4-Regular.ttf"),
-  path.join(FONT_DIR, "SourceSerif4-Semibold.ttf"),
-  path.join(FONT_DIR, "SourceSans3-Regular.ttf"),
-  path.join(FONT_DIR, "SourceSans3-Semibold.ttf"),
-];
+const FONT_FILES = rendererFontFiles();
 
 export function parseCanvas(
   width: unknown,

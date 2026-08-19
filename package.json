@@ -4,12 +4,18 @@
   "private": true,
   "license": "MIT",
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev --hostname 127.0.0.1 --port 3001",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
     "test": "vitest run",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "dev:setup": "scripts/tapframe dev-data",
+    "deploy": "scripts/tapframe deploy",
+    "production:install": "scripts/tapframe install",
+    "production:rollback": "scripts/tapframe rollback",
+    "production:status": "scripts/tapframe status",
+    "production:logs": "scripts/tapframe logs"
   },
   "engines": {
     "node": ">=20.9.0"

@@ -1,20 +1,25 @@
 import "server-only";
 
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
-import { defaultDataDir } from "../tap-store";
+import { atomicWriteFile } from "../atomic-write";
+import { resolveDataDir } from "../data-dir";
 import { parseDisplaySettings } from "./settings";
 import type { DisplaySettings } from "./types";
 
-export function createDisplayStore(dataDir: string) {
-  const file = path.join(dataDir, "display.yaml");
+export function createDisplayStore(dataDir: string | (() => string)) {
+  const paths = () => {
+    const resolved = typeof dataDir === "function" ? dataDir() : dataDir;
+    return { dataDir: resolved, file: path.join(resolved, "display.yaml") };
+  };
 
   return {
     async load(): Promise<DisplaySettings> {
+      const { file } = paths();
       let text: string;
       try {
-        text = await readFile(file, "utf8");
+        text = await readFile(/* turbopackIgnore: true */ file, "utf8");
       } catch (error) {
         if (isNotFound(error)) {
           return parseDisplaySettings(null);
@@ -32,9 +37,10 @@ export function createDisplayStore(dataDir: string) {
     },
 
     async save(settings: DisplaySettings): Promise<void> {
+      const { dataDir, file } = paths();
       const next = parseDisplaySettings(settings);
       await mkdir(dataDir, { recursive: true });
-      await writeFile(
+      await atomicWriteFile(
         file,
         stringifyYaml(
           {
@@ -44,7 +50,6 @@ export function createDisplayStore(dataDir: string) {
           },
           { lineWidth: 0 },
         ),
-        "utf8",
       );
     },
   };
@@ -59,4 +64,4 @@ function isNotFound(error: unknown): boolean {
   );
 }
 
-export const defaultDisplayStore = createDisplayStore(defaultDataDir());
+export const defaultDisplayStore = createDisplayStore(resolveDataDir);

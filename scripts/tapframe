@@ -1,0 +1,470 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+readonly SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd -P)"
+readonly REPO_ROOT="$(cd -- "$SCRIPT_DIR/.." && pwd -P)"
+readonly APP_ROOT="$HOME/.local/share/tapframe"
+readonly RELEASES="$APP_ROOT/releases"
+readonly DATA="$APP_ROOT/data"
+readonly BACKUPS="$APP_ROOT/backups"
+readonly CURRENT="$APP_ROOT/current"
+readonly CONFIG_DIR="$HOME/.config/tapframe"
+readonly ENV_FILE="$CONFIG_DIR/tapframe.env"
+readonly USER_UNIT_DIR="$HOME/.config/systemd/user"
+readonly UNIT_NAME="tapframe.service"
+readonly UNIT_FILE="$USER_UNIT_DIR/$UNIT_NAME"
+readonly UNIT_TEMPLATE="$REPO_ROOT/deploy/tapframe.service"
+readonly ENV_TEMPLATE="$REPO_ROOT/deploy/tapframe.env.example"
+readonly MISE=/usr/bin/mise
+readonly HEALTH_URL=http://127.0.0.1:3000/api/health
+readonly RELEASE_KEEP=3
+readonly BACKUP_KEEP=5
+
+usage() {
+  cat <<'EOF'
+Usage: scripts/tapframe <command> [options]
+
+Commands:
+  install [--migrate-from DIR | --no-seed]
+      Create the production layout, seed new data (default), optionally migrate
+      an existing data directory, install/enable the user unit, and check linger.
+  deploy
+      Build and deploy the clean main checkout's exact commit.
+  rollback [RELEASE]
+      Switch code to the previous release, or to a named release. Data is not changed.
+  status
+      Show the current release and user service status.
+  logs [JOURNALCTL_OPTIONS...]
+      Show the service journal (defaults to the latest 100 lines).
+  dev-data [--from-production] [WORKTREE]
+      Initialize isolated development data in the current or specified worktree.
+EOF
+}
+
+die() {
+  printf 'tapframe: %s\n' "$*" >&2
+  exit 1
+}
+
+note() {
+  printf 'tapframe: %s\n' "$*" >&2
+}
+
+require_command() {
+  command -v "$1" >/dev/null 2>&1 || die "required command not found: $1"
+}
+
+ensure_layout() {
+  mkdir -p -- "$APP_ROOT" "$RELEASES" "$DATA" "$BACKUPS" "$CONFIG_DIR"
+}
+
+lock_deployments() {
+  ensure_layout
+  require_command flock
+  exec 9>"$APP_ROOT/deploy.lock"
+  flock -n 9 || die "another Tapframe operation is running"
+}
+
+directory_is_empty() {
+  local dir=$1
+  local -a entries
+  shopt -s nullglob dotglob
+  entries=("$dir"/*)
+  shopt -u nullglob dotglob
+  ((${#entries[@]} == 0))
+}
+
+copy_initial_data() {
+  local source=$1
+  local label=$2
+  local temporary
+
+  [[ -d "$source" ]] || die "$label data directory does not exist: $source"
+  [[ -f "$source/taps.yaml" && -f "$source/display.yaml" ]] ||
+    die "$label data must contain taps.yaml and display.yaml"
+  [[ "$(realpath -- "$source")" != "$(realpath -- "$DATA")" ]] ||
+    die "$label data source is the production data directory"
+  directory_is_empty "$DATA" || die "production data is not empty; refusing to overwrite $DATA"
+  temporary="$(mktemp -d "$APP_ROOT/.data.XXXXXX")"
+  if ! cp -a -- "$source/." "$temporary/"; then
+    rm -rf -- "$temporary"
+    die "could not copy $label data"
+  fi
+  rmdir -- "$DATA" || {
+    rm -rf -- "$temporary"
+    die "production data changed while it was being initialized"
+  }
+  mv -- "$temporary" "$DATA"
+  note "initialized production data from $source"
+}
+
+install_service() {
+  [[ -f "$UNIT_TEMPLATE" ]] || die "missing service template: $UNIT_TEMPLATE"
+  [[ -f "$ENV_TEMPLATE" ]] || die "missing environment template: $ENV_TEMPLATE"
+  mkdir -p -- "$USER_UNIT_DIR"
+  if [[ -f "$UNIT_FILE" && ! -f "$UNIT_FILE.worktree.bak" ]]; then
+    cp -a -- "$UNIT_FILE" "$UNIT_FILE.worktree.bak"
+    note "saved previous service definition to $UNIT_FILE.worktree.bak"
+  fi
+  install -m 0644 -- "$UNIT_TEMPLATE" "$UNIT_FILE"
+  if [[ ! -e "$ENV_FILE" ]]; then
+    install -m 0600 -- "$ENV_TEMPLATE" "$ENV_FILE"
+  else
+    note "kept existing environment file: $ENV_FILE"
+  fi
+  systemctl --user daemon-reload
+  systemctl --user enable "$UNIT_NAME"
+}
+
+check_linger() {
+  local linger
+  linger="$(loginctl show-user "$USER" --property=Linger --value 2>/dev/null || true)"
+  if [[ "$linger" != yes ]]; then
+    note "user lingering is not enabled; an administrator must run: sudo loginctl enable-linger $USER"
+    return 1
+  fi
+  note "user lingering is enabled"
+}
+
+cmd_install() {
+  local migrate_from=
+  local seed=yes
+
+  while (($#)); do
+    case "$1" in
+      --migrate-from)
+        (($# >= 2)) || die "--migrate-from requires a directory"
+        migrate_from=$2
+        seed=no
+        shift 2
+        ;;
+      --no-seed)
+        [[ -z "$migrate_from" ]] || die "--no-seed and --migrate-from are mutually exclusive"
+        seed=no
+        shift
+        ;;
+      *) die "unknown install option: $1" ;;
+    esac
+  done
+
+  require_command systemctl
+  require_command loginctl
+  lock_deployments
+  if [[ -n "$migrate_from" ]]; then
+    if systemctl --user is-active --quiet "$UNIT_NAME"; then
+      die "stop the current $UNIT_NAME before migrating its data, then rerun this command"
+    fi
+    copy_initial_data "$(realpath -- "$migrate_from")" migrated
+  elif [[ "$seed" == yes ]] && directory_is_empty "$DATA"; then
+    copy_initial_data "$REPO_ROOT/data" seed
+  elif [[ "$seed" == yes ]]; then
+    note "kept existing production data: $DATA"
+  fi
+  install_service
+  check_linger || true
+  note "installation complete; run scripts/tapframe deploy from a committed, clean main checkout"
+}
+
+assert_clean_main() {
+  local branch
+  branch="$(git -C "$REPO_ROOT" symbolic-ref --quiet --short HEAD 2>/dev/null || true)"
+  [[ "$branch" == main ]] || die "deploy must run from branch main (currently ${branch:-detached})"
+  [[ -z "$(git -C "$REPO_ROOT" status --porcelain=v1 --untracked-files=normal)" ]] ||
+    die "deploy requires a clean worktree, including no untracked files"
+}
+
+remove_worktree() {
+  local worktree=${1:-}
+  if [[ -n "$worktree" && -d "$worktree" ]]; then
+    git -C "$REPO_ROOT" worktree remove --force -- "$worktree" >/dev/null 2>&1 || true
+  fi
+}
+
+build_release() {
+  local sha=$1
+  local worktree=$2
+  local stage=$3
+
+  git -C "$REPO_ROOT" worktree add --detach -- "$worktree" "$sha"
+  (
+    cd -- "$worktree"
+    "$MISE" exec -- pnpm install --frozen-lockfile
+    "$MISE" exec -- pnpm test
+    "$MISE" exec -- pnpm lint
+    "$MISE" exec -- pnpm build
+  )
+
+  [[ -f "$worktree/.next/standalone/server.js" ]] || die "build did not produce standalone server.js"
+  mkdir -p -- "$stage/.next"
+  cp -a -- "$worktree/.next/standalone/." "$stage/"
+  cp -a -- "$worktree/.next/static" "$stage/.next/static"
+  if [[ -d "$worktree/public" ]]; then
+    cp -a -- "$worktree/public" "$stage/public"
+  fi
+  mkdir -p -- "$stage/src/lib"
+  cp -a -- "$worktree/src/lib/fonts" "$stage/src/lib/fonts"
+  rm -rf -- "$stage/data"
+  ln -s -- "$DATA" "$stage/data"
+  printf '%s\n' "$sha" >"$stage/.tapframe-release"
+}
+
+validate_release() {
+  local release=$1
+  local dangling
+
+  [[ -f "$release/server.js" ]] || die "release has no server.js"
+  [[ -d "$release/.next/static" ]] || die "release has no Next.js static assets"
+  [[ -d "$release/src/lib/fonts" ]] || die "release has no render fonts"
+  [[ -L "$release/data" && "$(readlink -- "$release/data")" == "$DATA" ]] ||
+    die "release data is not linked to production data"
+  dangling="$(find -L "$release" -type l -print -quit)"
+  [[ -z "$dangling" ]] || die "release contains a dangling symlink: $dangling"
+  (
+    cd -- "$release"
+    "$MISE" exec -- node -e "require('sharp'); require('@resvg/resvg-js')"
+  ) || die "standalone native modules failed to load"
+}
+
+snapshot_data() {
+  local name temporary final
+  name="$(date -u +%Y%m%dT%H%M%SZ)-$$"
+  temporary="$BACKUPS/.${name}.tmp"
+  final="$BACKUPS/$name"
+  mkdir -- "$temporary"
+  if ! cp -a -- "$DATA/." "$temporary/"; then
+    rm -rf -- "$temporary"
+    return 1
+  fi
+  mv -- "$temporary" "$final"
+  note "saved data snapshot $final"
+}
+
+switch_current() {
+  local release=$1
+  local temporary="$APP_ROOT/.current.$$"
+  ln -s -- "$release" "$temporary"
+  mv -Tf -- "$temporary" "$CURRENT"
+}
+
+health_check() {
+  local attempt
+  for attempt in {1..30}; do
+    if curl --fail --silent --show-error --max-time 2 "$HEALTH_URL" >/dev/null 2>&1; then
+      return 0
+    fi
+    sleep 1
+  done
+  return 1
+}
+
+restore_code_after_failure() {
+  local previous=$1
+  systemctl --user stop "$UNIT_NAME" >/dev/null 2>&1 || true
+  if [[ -n "$previous" && -d "$previous" ]]; then
+    if ! switch_current "$previous"; then
+      note "deployment failed and the prior code release could not be restored"
+      return 1
+    fi
+    if systemctl --user start "$UNIT_NAME" && health_check; then
+      note "deployment failed; restored code release $(basename -- "$previous")"
+      return 0
+    else
+      note "deployment failed and the restored release did not pass its health check"
+      return 1
+    fi
+  else
+    rm -f -- "$CURRENT"
+    note "initial deployment failed; no prior code release was available"
+    return 1
+  fi
+}
+
+prune_directories() {
+  local parent=$1
+  local keep=$2
+  local protect=${3:-}
+  local -a entries
+  local remove_count index
+
+  mapfile -t entries < <(printf '%s\n' "$parent"/*/ 2>/dev/null | sort)
+  ((${#entries[@]} > keep)) || return 0
+  remove_count=$((${#entries[@]} - keep))
+  for ((index = 0; index < ${#entries[@]} && remove_count > 0; index++)); do
+    if [[ -n "$protect" && "${entries[index]%/}" == "$protect" ]]; then
+      continue
+    fi
+    rm -rf -- "${entries[index]}"
+    ((remove_count--)) || true
+  done
+}
+
+cmd_deploy() {
+  local sha timestamp release stage worktree previous=
+
+  require_command git
+  require_command curl
+  require_command systemctl
+  [[ -x "$MISE" ]] || die "mise is required at $MISE"
+  lock_deployments
+  assert_clean_main
+  [[ -f "$UNIT_FILE" ]] || die "service is not installed; run scripts/tapframe install first"
+  [[ -f "$ENV_FILE" ]] || die "missing production config: $ENV_FILE"
+
+  sha="$(git -C "$REPO_ROOT" rev-parse HEAD)"
+  timestamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  release="$RELEASES/${timestamp}-${sha:0:12}"
+  stage="$RELEASES/.${timestamp}-${sha:0:12}.$$"
+  worktree="$(mktemp -d "$APP_ROOT/.build.XXXXXX")"
+  rmdir -- "$worktree"
+  trap 'remove_worktree "${worktree:-}"; rm -rf -- "${stage:-}"' EXIT
+
+  note "building commit $sha in a detached worktree"
+  mkdir -- "$stage"
+  build_release "$sha" "$worktree" "$stage"
+  validate_release "$stage"
+  mv -- "$stage" "$release"
+  remove_worktree "$worktree"
+  worktree=
+
+  if [[ -L "$CURRENT" ]]; then
+    previous="$(readlink -f -- "$CURRENT")"
+  elif [[ -e "$CURRENT" ]]; then
+    die "$CURRENT exists but is not a release symlink"
+  fi
+
+  systemctl --user stop "$UNIT_NAME" >/dev/null 2>&1 || true
+  if ! snapshot_data; then
+    [[ -z "$previous" ]] || systemctl --user start "$UNIT_NAME" || true
+    die "deployment stopped before switching code"
+  fi
+  if ! switch_current "$release"; then
+    [[ -z "$previous" ]] || systemctl --user start "$UNIT_NAME" || true
+    die "could not switch the current release"
+  fi
+  if ! systemctl --user start "$UNIT_NAME" || ! health_check; then
+    restore_code_after_failure "$previous" || true
+    rm -rf -- "$release"
+    die "new release failed its health check"
+  fi
+
+  prune_directories "$RELEASES" "$RELEASE_KEEP" "$(readlink -f -- "$CURRENT")"
+  prune_directories "$BACKUPS" "$BACKUP_KEEP"
+  trap - EXIT
+  note "deployed $sha"
+}
+
+previous_release() {
+  local current_real=$1
+  local -a candidates
+  local candidate
+  mapfile -t candidates < <(printf '%s\n' "$RELEASES"/*/ 2>/dev/null | sort -r)
+  for candidate in "${candidates[@]}"; do
+    candidate=${candidate%/}
+    if [[ "$candidate" != "$current_real" ]]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+  return 1
+}
+
+cmd_rollback() {
+  local requested=${1:-}
+  local original target
+  (($# <= 1)) || die "rollback accepts at most one release name"
+  require_command systemctl
+  require_command curl
+  lock_deployments
+  [[ -L "$CURRENT" ]] || die "there is no current release"
+  original="$(readlink -f -- "$CURRENT")"
+  if [[ -n "$requested" ]]; then
+    [[ "$requested" =~ ^[0-9]{8}T[0-9]{6}Z-[0-9a-f]{12}$ ]] ||
+      die "release must be a name from $RELEASES"
+    target="$RELEASES/$requested"
+  else
+    target="$(previous_release "$original")" || die "there is no previous release"
+  fi
+  [[ -d "$target" ]] || die "release does not exist: $target"
+  validate_release "$target"
+
+  systemctl --user stop "$UNIT_NAME" >/dev/null 2>&1 || true
+  switch_current "$target"
+  if ! systemctl --user start "$UNIT_NAME" || ! health_check; then
+    restore_code_after_failure "$original" || true
+    die "rollback target failed its health check"
+  fi
+  note "rolled code back to $(basename -- "$target"); production data was unchanged"
+}
+
+cmd_status() {
+  if [[ -L "$CURRENT" ]]; then
+    printf 'Current release: %s\n' "$(readlink -f -- "$CURRENT")"
+    if [[ -f "$CURRENT/.tapframe-release" ]]; then
+      printf 'Commit: %s\n' "$(<"$CURRENT/.tapframe-release")"
+    fi
+  else
+    printf 'Current release: none\n'
+  fi
+  systemctl --user status "$UNIT_NAME" --no-pager
+}
+
+cmd_logs() {
+  if (($#)); then
+    journalctl --user --unit="$UNIT_NAME" --no-pager "$@"
+  else
+    journalctl --user --unit="$UNIT_NAME" --lines=100 --no-pager
+  fi
+}
+
+cmd_dev_data() {
+  local source="$REPO_ROOT/data"
+  local worktree="$REPO_ROOT"
+  local dev_data
+
+  while (($#)); do
+    case "$1" in
+      --from-production)
+        source=$DATA
+        shift
+        ;;
+      -*) die "unknown dev-data option: $1" ;;
+      *)
+        worktree=$1
+        shift
+        (($# == 0)) || die "dev-data accepts one worktree path"
+        ;;
+    esac
+  done
+
+  lock_deployments
+  worktree="$(realpath -- "$worktree")"
+  [[ -f "$worktree/package.json" ]] || die "not a Tapframe worktree: $worktree"
+  dev_data="$worktree/.dev/data"
+  [[ ! -e "$dev_data" ]] || die "development data already exists: $dev_data"
+  [[ -d "$source" ]] || die "development data source does not exist: $source"
+  mkdir -p -- "$worktree/.dev"
+  cp -a -- "$source" "$dev_data"
+  note "created isolated development data: $dev_data"
+  note "run: cd '$worktree' && $MISE exec -- pnpm dev"
+}
+
+main() {
+  local command=${1:-}
+  [[ -n "$command" ]] || {
+    usage
+    exit 2
+  }
+  shift
+  case "$command" in
+    install) cmd_install "$@" ;;
+    deploy) cmd_deploy "$@" ;;
+    rollback) cmd_rollback "$@" ;;
+    status) cmd_status "$@" ;;
+    logs) cmd_logs "$@" ;;
+    dev-data) cmd_dev_data "$@" ;;
+    help|-h|--help) usage ;;
+    *) usage >&2; die "unknown command: $command" ;;
+  esac
+}
+
+main "$@"

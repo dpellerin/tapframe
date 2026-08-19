@@ -21,18 +21,49 @@ Cheers!
 
 ```bash
 pnpm install
+pnpm dev:setup
 pnpm dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000).
+Open [http://localhost:3001](http://localhost:3001). Development data lives
+under `.dev/data/` and is never used by a production deployment.
 
 ```bash
 pnpm test
 pnpm build
-pnpm start
+TAPFRAME_DATA_DIR="$PWD/.dev/data" pnpm start
 ```
 
-After `pnpm start`, the same URL serves the production build.
+The manual production server uses [http://localhost:3000](http://localhost:3000).
+
+## Deploy
+
+Tapframe can run as an immutable standalone release from
+`~/.local/share/tapframe`, independently of this checkout. User lingering lets
+the service start at boot without an interactive login.
+
+One-time installation:
+
+```bash
+pnpm production:install
+pnpm deploy
+```
+
+Deployments require a clean `main` branch. They build the exact commit in a
+temporary worktree, run the test and lint suites, snapshot production data,
+atomically activate the release, and roll back automatically if the health
+check fails.
+
+```bash
+pnpm deploy
+pnpm production:status
+pnpm production:logs
+pnpm production:rollback
+```
+
+Production data is stored in `~/.local/share/tapframe/data`. Code rollback does
+not roll back data. The deployer retains three code releases and five
+pre-deploy data snapshots.
 
 ## Using it
 
@@ -45,13 +76,18 @@ The tap cards are left to right, same as the handles. A board holds as many beer
 
 ## Data
 
-There is no database. Clone the repo and run — the `data/` files are already there.
+There is no database. The tracked `data/` files seed a new development or
+production data directory; running instances do not write back to those seed
+files.
 
 | File                | In git?     | What                                                      |
 | ------------------- | ----------- | --------------------------------------------------------- |
 | `data/taps.yaml`    | yes         | Headline, subtitle, ordered beers (sample list included)  |
 | `data/display.yaml` | yes         | Display module, size, and field values (Fraimic defaults) |
 | `data/logos/`       | folder only | Uploaded marks. Images you add are gitignored.            |
+
+`TAPFRAME_DATA_DIR` selects the runtime data directory. It is mandatory in
+production and defaults to `.dev/data` during development.
 
 Each beer has a name, style, ABV, optional description, and optional logo. Missing logo uses a generic glass. Edit in the admin or in the YAML.
 
