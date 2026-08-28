@@ -1,6 +1,7 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
+  allowedDevOrigins: ["192.168.50.196"],
   output: "standalone",
   serverExternalPackages: ["@resvg/resvg-js", "sharp"],
   outputFileTracingIncludes: {

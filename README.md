@@ -26,7 +26,8 @@ pnpm dev
 ```
 
 Open [http://localhost:3001](http://localhost:3001). Development data lives
-under `.dev/data/` and is never used by a production deployment.
+under `.dev/data/` and is never used by a production deployment. For mobile
+testing on the local network, open port 3001 at this machine's LAN address.
 
 ```bash
 pnpm test

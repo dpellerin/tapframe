@@ -41,6 +41,8 @@ export function AdminApp({
   const [libraryLogos, setLibraryLogos] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const previewFrameRef = useRef<HTMLDivElement>(null);
+  const previewSectionRef = useRef<HTMLElement>(null);
+  const lastSnapshotRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
@@ -49,6 +51,52 @@ export function AdminApp({
       }
     };
   }, [previewUrl]);
+
+  useEffect(() => {
+    const snapshot = JSON.stringify({
+      title,
+      subtitle,
+      taps: taps.map(stripKey),
+    });
+    if (lastSnapshotRef.current === null) {
+      lastSnapshotRef.current = snapshot;
+      return;
+    }
+    if (lastSnapshotRef.current === snapshot) {
+      return;
+    }
+    lastSnapshotRef.current = snapshot;
+
+    const save = async () => {
+      const parsed = parseMenu({ title, subtitle, taps: taps.map(stripKey) });
+      if (!parsed.ok) {
+        setStatus("Not saved yet.");
+        return;
+      }
+      setBusy("save");
+      setError(null);
+      try {
+        const response = await fetch("/api/taps", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(parsed.menu),
+        });
+        const payload = (await response.json()) as { error?: string };
+        if (!response.ok) {
+          setError(payload.error ?? "Could not save.");
+          return;
+        }
+        setStatus("Saved.");
+      } catch {
+        setError("Could not save.");
+      } finally {
+        setBusy(null);
+      }
+    };
+
+    const timer = setTimeout(() => void save(), 1000);
+    return () => clearTimeout(timer);
+  }, [title, subtitle, taps]);
 
   useEffect(() => {
     let cancelled = false;
@@ -138,36 +186,6 @@ export function AdminApp({
     });
   }
 
-  async function save() {
-    const parsed = parseMenu({ title, subtitle, taps: taps.map(stripKey) });
-    if (!parsed.ok) {
-      setError(parsed.error);
-      return false;
-    }
-
-    setBusy("save");
-    setError(null);
-    try {
-      const response = await fetch("/api/taps", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(parsed.menu),
-      });
-      const payload = (await response.json()) as { error?: string };
-      if (!response.ok) {
-        setError(payload.error ?? "Could not save.");
-        return false;
-      }
-      setStatus("Saved.");
-      return true;
-    } catch {
-      setError("Could not save.");
-      return false;
-    } finally {
-      setBusy(null);
-    }
-  }
-
   async function saveDisplaySettings(next: DisplaySettings): Promise<boolean> {
     try {
       const response = await fetch("/api/display", {
@@ -242,6 +260,14 @@ export function AdminApp({
         }
         return url;
       });
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          previewSectionRef.current?.scrollIntoView({
+            behavior: "smooth",
+            block: "nearest",
+          });
+        });
+      });
       void requestPng(parsed.menu, size, layout)
         .then((blob) => {
           setFrameBlob(blob);
@@ -265,14 +291,6 @@ export function AdminApp({
           </h1>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <button
-            type="button"
-            onClick={() => void save()}
-            disabled={busy !== null || taps.length === 0}
-            className="rounded-full border border-stone-300 px-4 py-2 text-sm text-stone-800 hover:bg-white disabled:opacity-40"
-          >
-            {busy === "save" ? "Saving…" : "Save"}
-          </button>
           <button
             type="button"
             onClick={() => void generate()}
@@ -306,6 +324,8 @@ export function AdminApp({
         <p className="mb-4 text-sm text-red-700" role="alert">
           {error}
         </p>
+      ) : busy === "save" ? (
+        <p className="mb-4 text-sm text-stone-500">Saving…</p>
       ) : status ? (
         <p className="mb-4 text-sm text-stone-500">{status}</p>
       ) : null}
@@ -340,7 +360,7 @@ export function AdminApp({
               value={subtitle}
               onChange={(event) => setSubtitle(event.target.value)}
               placeholder={quietSubtitle(taps.length)}
-              className="w-full bg-transparent text-center text-sm tracking-[0.12em] text-stone-500 outline-none placeholder:text-stone-300"
+              className="w-full bg-transparent text-center text-base tracking-[0.12em] text-stone-500 outline-none placeholder:text-stone-300 sm:text-sm"
             />
           </label>
         </section>
@@ -388,7 +408,7 @@ export function AdminApp({
                 <button
                   type="button"
                   onClick={addTap}
-                  className="h-auto min-h-32 w-52 shrink-0 rounded-2xl border border-dashed border-stone-300 px-3 py-8 text-sm text-stone-500 hover:border-stone-400 hover:text-stone-800"
+                  className="h-auto min-h-32 w-full shrink-0 rounded-2xl border border-dashed border-stone-300 px-3 py-8 text-sm text-stone-500 hover:border-stone-400 hover:text-stone-800 sm:w-52"
                 >
                   Add a tap
                 </button>
@@ -399,6 +419,7 @@ export function AdminApp({
 
         <section
           data-frame-ready={frameBlob ? "true" : "false"}
+          ref={previewSectionRef}
           className="flex flex-1 flex-col items-center gap-3 rounded-2xl border border-stone-200/80 bg-white p-4"
         >
           {previewUrl ? (

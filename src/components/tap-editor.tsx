@@ -50,7 +50,7 @@ export function TapEditor({
   }
 
   return (
-    <article className="w-52 shrink-0 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm">
+    <article className="w-full shrink-0 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm sm:w-52">
       <header className="mb-3 flex items-center justify-between gap-3">
         <div
           className="flex items-center overflow-hidden rounded-full border border-stone-200"
@@ -194,7 +194,7 @@ function DescriptionField({
         onBlur={() => setFocused(false)}
         rows={focused ? 4 : 2}
         placeholder="Crisp and easy. The weeknight beer."
-        className="w-full resize-none border-b border-stone-200 bg-transparent py-1 text-[15px] leading-snug text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900"
+        className="w-full resize-none border-b border-stone-200 bg-transparent py-1 text-base leading-snug text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900 sm:text-[15px]"
       />
     </label>
   );
@@ -223,7 +223,7 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         inputMode={inputMode}
-        className="w-full border-b border-stone-200 bg-transparent py-1 text-[15px] text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900"
+        className="w-full border-b border-stone-200 bg-transparent py-1 text-base text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900 sm:text-[15px]"
       />
     </label>
   );
