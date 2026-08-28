@@ -50,7 +50,7 @@ export function TapEditor({
   }
 
   return (
-    <article className="w-52 shrink-0 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm">
+    <article className="w-full shrink-0 rounded-2xl border border-stone-200/80 bg-white p-4 shadow-sm sm:w-52">
       <header className="mb-3 flex items-center justify-between gap-3">
         <div
           className="flex items-center overflow-hidden rounded-full border border-stone-200"

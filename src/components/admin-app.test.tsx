@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { DisplayManifest } from "@/lib/display/types";
@@ -43,6 +43,7 @@ function mockFetch() {
 describe("AdminApp", () => {
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.useRealTimers();
   });
 
   it("renders tap editors in a left-to-right row that does not stretch", () => {
@@ -147,6 +148,42 @@ describe("AdminApp", () => {
     expect(screen.getByLabelText("Frame address")).toHaveValue("fraimic.local");
   });
 
+  it("autosaves edits to the server after a short pause", async () => {
+    const fetchMock = mockFetch();
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <AdminApp
+        initialTaps={[
+          {
+            name: "Helles",
+            style: "Lager",
+            abv: 4.8,
+            description: "Crisp.",
+          },
+        ]}
+      />,
+    );
+
+    await user.clear(screen.getByLabelText("Headline"));
+    await user.type(screen.getByLabelText("Headline"), "Weekend");
+
+    await waitFor(
+      () => expect(screen.getByText("Saved.")).toBeInTheDocument(),
+      { timeout: 3000 },
+    );
+
+    const tapsCall = fetchMock.mock.calls.find(
+      ([url]) => String(url) === "/api/taps",
+    );
+    expect(tapsCall).toBeTruthy();
+    const init = (tapsCall as unknown[])[1] as RequestInit | undefined;
+    expect(init?.method).toBe("PUT");
+    expect(JSON.parse(String(init?.body))).toMatchObject({
+      title: "Weekend",
+    });
+  });
+
   it("hides add once the selected display is full", () => {
     render(
       <AdminApp
@@ -174,6 +211,28 @@ describe("AdminApp", () => {
 
     expect(screen.getAllByRole("article")).toHaveLength(2);
     expect(screen.queryByRole("button", { name: "Add a tap" })).toBeNull();
+  });
+
+  it("lets tap cards fill the screen width on small screens", () => {
+    render(
+      <AdminApp
+        initialTaps={[
+          {
+            name: "Helles",
+            style: "Lager",
+            abv: 4.8,
+            description: "Crisp.",
+          },
+        ]}
+      />,
+    );
+
+    expect(
+      screen.getByDisplayValue("Helles").closest("article")?.className,
+    ).toContain("w-full");
+    expect(screen.getByRole("button", { name: "Add a tap" }).className).toContain(
+      "w-full",
+    );
   });
 
   it("places the preview size above the image well", () => {
