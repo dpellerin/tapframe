@@ -3,9 +3,8 @@
   "version": "0.1.0",
   "private": true,
   "license": "MIT",
-  "scripts": {
-    "dev": "node scripts/ensure-dev-data.mjs && next dev --hostname 127.0.0.1 --port 3001",
-    "dev:mobile": "node scripts/ensure-dev-data.mjs && node scripts/dev-mobile.mjs",
+    "scripts": {
+    "dev": "node scripts/ensure-dev-data.mjs && node scripts/dev.mjs",
     "build": "next build",
     "start": "next start",
     "lint": "eslint",

@@ -6,7 +6,7 @@ import {
   parseHostArgument,
   privateLanCandidates,
   selectLanAddress,
-} from "./dev-mobile.mjs";
+} from "./dev.mjs";
 
 test("recognizes only RFC 1918 IPv4 addresses", () => {
   assert.equal(isPrivateIpv4("10.20.30.40"), true);

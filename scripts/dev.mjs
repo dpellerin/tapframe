@@ -2,10 +2,13 @@
 
 import { spawn } from "node:child_process";
 import { createRequire } from "node:module";
+import { connect, createServer } from "node:net";
 import { networkInterfaces } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
+const PORT = 3001;
+const LOOPBACK = "127.0.0.1";
 const EXCLUDED_INTERFACE =
   /^(?:lo|docker|br-|veth|virbr|vmnet|vboxnet|utun|tun\d|tap\d|wg\d|tailscale|zt)/i;
 
@@ -63,7 +66,7 @@ export function parseHostArgument(args) {
     return args[1];
   }
 
-  throw new Error("usage: pnpm dev:mobile [--host PRIVATE_LAN_IP]");
+  throw new Error("usage: pnpm dev [--host PRIVATE_LAN_IP]");
 }
 
 export function selectLanAddress(candidates, requestedHost) {
@@ -90,42 +93,72 @@ export function selectLanAddress(candidates, requestedHost) {
   const choices = candidates
     .map(
       ({ address, name }) =>
-        `  ${name}: ${address}\n    pnpm dev:mobile --host ${address}`,
+        `  ${name}: ${address}\n    pnpm dev --host ${address}`,
     )
     .join("\n");
 
   throw new Error(`More than one private LAN address was detected:\n${choices}`);
 }
 
-export async function runMobileDev(args = process.argv.slice(2)) {
+function listen(server, host) {
+  return new Promise((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(PORT, host, () => {
+      server.off("error", reject);
+      resolve();
+    });
+  });
+}
+
+export function createLanProxy() {
+  return createServer((client) => {
+    const upstream = connect({ host: LOOPBACK, port: PORT });
+
+    client.pipe(upstream);
+    upstream.pipe(client);
+
+    client.once("error", () => upstream.destroy());
+    upstream.once("error", () => client.destroy());
+  });
+}
+
+export async function runDev(args = process.argv.slice(2)) {
   const requestedHost = parseHostArgument(args);
   const selected = selectLanAddress(
     privateLanCandidates(networkInterfaces()),
     requestedHost,
   );
+  const proxy = createLanProxy();
+  await listen(proxy, selected.address);
+
   const require = createRequire(import.meta.url);
   const nextCli = require.resolve("next/dist/bin/next");
 
-  console.log(`Tapframe mobile development: http://${selected.address}:3001`);
+  console.log(`Tapframe local:   http://localhost:${PORT}`);
+  console.log(`Tapframe network: http://${selected.address}:${PORT}`);
   console.log(`Network interface: ${selected.name}`);
-  console.log("This server is available to devices on the selected network.\n");
+  console.log("The network URL is available to devices on this network.\n");
 
   const child = spawn(
     process.execPath,
-    [nextCli, "dev", "--hostname", selected.address, "--port", "3001"],
+    [nextCli, "dev", "--hostname", LOOPBACK, "--port", String(PORT)],
     {
+      env: {
+        ...process.env,
+        TAPFRAME_DEV_ORIGINS: selected.address,
+      },
       stdio: "inherit",
     },
   );
 
   return new Promise((resolve, reject) => {
-    child.once("error", reject);
+    child.once("error", (error) => {
+      proxy.close();
+      reject(error);
+    });
     child.once("exit", (code, signal) => {
-      if (signal) {
-        resolve(0);
-        return;
-      }
-      resolve(code ?? 1);
+      proxy.close();
+      resolve(signal ? 0 : (code ?? 1));
     });
   });
 }
@@ -136,7 +169,7 @@ const isMainModule =
 
 if (isMainModule) {
   try {
-    process.exitCode = await runMobileDev();
+    process.exitCode = await runDev();
   } catch (error) {
     console.error(`tapframe: ${error instanceof Error ? error.message : error}`);
     process.exitCode = 1;
