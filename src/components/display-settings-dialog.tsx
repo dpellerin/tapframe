@@ -12,7 +12,7 @@ type DisplaySettingsDialogProps = {
 };
 
 const CONTROL =
-  "h-8 w-full border-b border-stone-200 bg-transparent text-[15px] leading-8 text-stone-900 outline-none";
+  "h-8 w-full border-b border-stone-200 bg-transparent text-base leading-8 text-stone-900 outline-none sm:text-[15px]";
 
 export function DisplaySettingsDialog({
   initial,

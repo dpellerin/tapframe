@@ -10,7 +10,6 @@ import { DEFAULT_DISPLAY } from "@/lib/display/types";
 import { fitPreviewCanvas } from "@/lib/preview-sizes";
 import { DEFAULT_TITLE, parseMenu, quietSubtitle, type Tap } from "@/lib/taps";
 import { DisplaySettingsDialog } from "./display-settings-dialog";
-import { TapDebug } from "./tap-debug";
 import { TapEditor, type TapDraft } from "./tap-editor";
 
 type AdminAppProps = {
@@ -361,7 +360,7 @@ export function AdminApp({
               value={subtitle}
               onChange={(event) => setSubtitle(event.target.value)}
               placeholder={quietSubtitle(taps.length)}
-              className="w-full bg-transparent text-center text-sm tracking-[0.12em] text-stone-500 outline-none placeholder:text-stone-300"
+              className="w-full bg-transparent text-center text-base tracking-[0.12em] text-stone-500 outline-none placeholder:text-stone-300 sm:text-sm"
             />
           </label>
         </section>
@@ -454,7 +453,6 @@ export function AdminApp({
           </div>
         </section>
       </div>
-      <TapDebug />
     </div>
   );
 }

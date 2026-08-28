@@ -194,7 +194,7 @@ function DescriptionField({
         onBlur={() => setFocused(false)}
         rows={focused ? 4 : 2}
         placeholder="Crisp and easy. The weeknight beer."
-        className="w-full resize-none border-b border-stone-200 bg-transparent py-1 text-[15px] leading-snug text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900"
+        className="w-full resize-none border-b border-stone-200 bg-transparent py-1 text-base leading-snug text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900 sm:text-[15px]"
       />
     </label>
   );
@@ -223,7 +223,7 @@ function Field({
         onChange={(event) => onChange(event.target.value)}
         placeholder={placeholder}
         inputMode={inputMode}
-        className="w-full border-b border-stone-200 bg-transparent py-1 text-[15px] text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900"
+        className="w-full border-b border-stone-200 bg-transparent py-1 text-base text-stone-900 outline-none placeholder:text-stone-300 focus:border-stone-900 sm:text-[15px]"
       />
     </label>
   );

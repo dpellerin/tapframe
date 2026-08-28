@@ -110,6 +110,9 @@ describe("AdminApp", () => {
     expect(within(dialog).getByLabelText("Frame address")).toHaveValue(
       "fraimic.local",
     );
+    expect(within(dialog).getByLabelText("Display").className).toContain(
+      "text-base",
+    );
     expect(within(dialog).getByText("4 across · 1 row")).toBeInTheDocument();
 
     await user.click(within(dialog).getByRole("button", { name: "Save" }));
@@ -233,6 +236,8 @@ describe("AdminApp", () => {
     expect(screen.getByRole("button", { name: "Add a tap" }).className).toContain(
       "w-full",
     );
+    expect(screen.getByLabelText("Line under").className).toContain("text-base");
+    expect(screen.getByDisplayValue("Helles").className).toContain("text-base");
   });
 
   it("places the preview size above the image well", () => {
