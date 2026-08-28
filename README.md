@@ -21,13 +21,31 @@ Cheers!
 
 ```bash
 pnpm install
-pnpm dev:setup
 pnpm dev
 ```
 
-Open [http://localhost:3001](http://localhost:3001). Development data lives
-under `.dev/data/` and is never used by a production deployment. For mobile
-testing on the local network, open port 3001 at this machine's LAN address.
+Open [http://localhost:3001](http://localhost:3001). The normal development
+server is available only on this machine. Development data lives under
+`.dev/data/` and is never used by a production deployment. On the first run,
+Tapframe copies the tracked sample from `data/` into that ignored directory.
+Later runs preserve your development taps and uploaded logos.
+
+For mobile testing from another device on the same trusted network, run:
+
+```bash
+pnpm dev:mobile
+```
+
+The command detects a private LAN address, binds only to that address, and
+prints the URL to open on the mobile device. If the machine has more than one
+suitable network connection, select one using the address shown by the command:
+
+```bash
+pnpm dev:mobile --host 192.168.1.23
+```
+
+Mobile development exposes the unauthenticated admin and its APIs to other
+devices on the selected network. Do not use it on an untrusted network.
 
 ```bash
 pnpm test

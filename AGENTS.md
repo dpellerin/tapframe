@@ -35,7 +35,8 @@ The admin writes an ordered tap list to a YAML file. Generate turns that list in
 
 | Command | Description |
 | --- | --- |
-| `pnpm dev` | Admin at http://localhost:3000 |
+| `pnpm dev` | Desktop-only admin at http://localhost:3001 |
+| `pnpm dev:mobile` | Admin on one detected private LAN address |
 | `pnpm test` | Vitest |
 | `pnpm build` | Production build |
 | `pnpm lint` | ESLint |
