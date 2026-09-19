@@ -286,7 +286,8 @@ export async function simulateFraimicPng(png: Buffer): Promise<Buffer> {
     decoded.info.width,
   );
   for (let i = 0; i < codes.length; i++) {
-    const [r, g, b] = PALETTE[COLOR_CODES.indexOf(codes[i])];
+    const paletteIndex = COLOR_CODES.findIndex((code) => code === codes[i]);
+    const [r, g, b] = PALETTE[paletteIndex];
     const offset = i * 3;
     rgb[offset] = r;
     rgb[offset + 1] = g;
