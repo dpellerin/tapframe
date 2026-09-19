@@ -15,6 +15,7 @@ const PALETTE: ReadonlyArray<readonly [number, number, number]> = [
 const PALETTE_LUMA = PALETTE.map(
   ([r, g, b]) => (r * 250 + g * 350 + b * 400) / (255 * 1000),
 );
+const SOLID_WHITE_LUMA = 0.9;
 
 export const EL133 = {
   id: "133",
@@ -84,13 +85,85 @@ export function deviceColorIndex(r: number, g: number, b: number): number {
 export function quantizeToDeviceCodes(
   rgb: Uint8Array,
   pixelCount: number,
+  width = pixelCount,
 ): Uint8Array {
   const codes = new Uint8Array(pixelCount);
-  for (let i = 0; i < pixelCount; i++) {
-    const o = i * 3;
-    codes[i] = COLOR_CODES[deviceColorIndex(rgb[o], rgb[o + 1], rgb[o + 2])];
+  const working = Float32Array.from(rgb);
+  const height = Math.ceil(pixelCount / width);
+
+  // Floyd-Steinberg diffusion lets the six-color panel represent neutral
+  // tones as a controlled pattern instead of snapping every pixel.
+  for (let y = 0; y < height; y++) {
+    const reverse = y % 2 === 1;
+    for (let step = 0; step < width; step++) {
+      const x = reverse ? width - 1 - step : step;
+      const i = y * width + x;
+      if (i >= pixelCount) {
+        continue;
+      }
+      const o = i * 3;
+      const sourceR = rgb[o];
+      const sourceG = rgb[o + 1];
+      const sourceB = rgb[o + 2];
+      const sourceChroma =
+        Math.max(sourceR, sourceG, sourceB) -
+        Math.min(sourceR, sourceG, sourceB);
+      if (
+        sourceChroma < 48 &&
+        lumaOf(sourceR, sourceG, sourceB) >= SOLID_WHITE_LUMA
+      ) {
+        codes[i] = COLOR_CODES[1];
+        continue;
+      }
+      const r = clampByte(working[o]);
+      const g = clampByte(working[o + 1]);
+      const b = clampByte(working[o + 2]);
+      const paletteIndex = deviceColorIndex(r, g, b);
+      codes[i] = COLOR_CODES[paletteIndex];
+      const [pr, pg, pb] = PALETTE[paletteIndex];
+      diffuseError(working, width, height, x, y, r - pr, g - pg, b - pb, reverse);
+    }
   }
   return codes;
+}
+
+function diffuseError(
+  working: Float32Array,
+  width: number,
+  height: number,
+  x: number,
+  y: number,
+  errorR: number,
+  errorG: number,
+  errorB: number,
+  reverse: boolean,
+): void {
+  const neighbors = reverse
+    ? [
+        [x - 1, y, 7],
+        [x + 1, y + 1, 3],
+        [x, y + 1, 5],
+        [x - 1, y + 1, 1],
+      ]
+    : [
+        [x + 1, y, 7],
+        [x - 1, y + 1, 3],
+        [x, y + 1, 5],
+        [x + 1, y + 1, 1],
+      ];
+  for (const [nx, ny, weight] of neighbors) {
+    if (nx < 0 || nx >= width || ny < 0 || ny >= height) {
+      continue;
+    }
+    const target = (ny * width + nx) * 3;
+    working[target] += (errorR * weight) / 16;
+    working[target + 1] += (errorG * weight) / 16;
+    working[target + 2] += (errorB * weight) / 16;
+  }
+}
+
+function clampByte(value: number): number {
+  return Math.min(255, Math.max(0, Math.round(value)));
 }
 
 /** 90° clockwise — Fraimic's landscape hanging hole is this side. */
@@ -198,6 +271,38 @@ async function fitToPanel(
   return fitted;
 }
 
+/**
+ * Re-colors a PNG the way the panel will: neutrals snap to black or
+ * white, saturated ink to the nearest Spectra color.
+ */
+export async function simulateFraimicPng(png: Buffer): Promise<Buffer> {
+  const decoded = await sharp(png).removeAlpha().raw().toBuffer({
+    resolveWithObject: true,
+  });
+  const rgb = decoded.data;
+  const codes = quantizeToDeviceCodes(
+    rgb,
+    decoded.info.width * decoded.info.height,
+    decoded.info.width,
+  );
+  for (let i = 0; i < codes.length; i++) {
+    const [r, g, b] = PALETTE[COLOR_CODES.indexOf(codes[i])];
+    const offset = i * 3;
+    rgb[offset] = r;
+    rgb[offset + 1] = g;
+    rgb[offset + 2] = b;
+  }
+  return sharp(rgb, {
+    raw: {
+      width: decoded.info.width,
+      height: decoded.info.height,
+      channels: 3,
+    },
+  })
+    .png()
+    .toBuffer();
+}
+
 export async function pngToFraimicBin(
   png: Buffer,
   sourceWidth: number,
@@ -220,7 +325,7 @@ export async function pngToFraimicBin(
   }
 
   rgb = await fitToPanel(rgb, width, height, panel);
-  const codes = quantizeToDeviceCodes(rgb, panel.width * panel.height);
+  const codes = quantizeToDeviceCodes(rgb, panel.width * panel.height, panel.width);
   const packed = panel.id === "315" ? packEl315(codes) : packEl133(codes);
   if (packed.length !== panel.binSize) {
     throw new Error(

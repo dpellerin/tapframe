@@ -1,5 +1,5 @@
 import type { DisplayAdapter, SendResult } from "@/lib/display/types";
-import { pngToFraimicBin } from "./bin";
+import { pngToFraimicBin, simulateFraimicPng } from "./bin";
 
 export const FRAIMIC_SIZES = [
   { id: "standard", width: 1600, height: 1200, label: "Standard · 1600 × 1200" },
@@ -21,6 +21,7 @@ export function createFraimicAdapter(
   http: typeof fetch = fetch,
 ): DisplayAdapter {
   return {
+    simulate: simulateFraimicPng,
     manifest: {
       id: "fraimic",
       name: "Fraimic",

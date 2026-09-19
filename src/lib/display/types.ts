@@ -46,6 +46,8 @@ export type SendResult =
 export type DisplayAdapter = {
   manifest: DisplayManifest;
   send: (context: SendContext) => Promise<SendResult>;
+  /** Maps a rendered PNG to what the device will actually show. */
+  simulate?: (png: Buffer) => Promise<Buffer>;
 };
 
 export const DEFAULT_DISPLAY: DisplaySettings = {

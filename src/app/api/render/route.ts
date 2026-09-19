@@ -1,4 +1,5 @@
 import { DEFAULT_BOARD_LAYOUT, parseBoardLayout } from "@/lib/display/layout";
+import { getDisplay } from "@/lib/display/registry";
 import { parseCanvas, renderMenuPng } from "@/lib/render";
 import { defaultTapStore } from "@/lib/tap-store";
 import { parseMenu } from "@/lib/taps";
@@ -26,6 +27,7 @@ export async function POST(request: Request) {
     maxPerRow?: unknown;
     rows?: unknown;
     layout?: unknown;
+    device?: unknown;
   };
   const parsed = parseMenu({
     title: raw.title,
@@ -47,7 +49,7 @@ export async function POST(request: Request) {
     DEFAULT_BOARD_LAYOUT;
 
   try {
-    const png = await renderMenuPng({
+    let png = await renderMenuPng({
       title: parsed.menu.title,
       subtitle: parsed.menu.subtitle,
       taps: parsed.menu.taps,
@@ -56,6 +58,13 @@ export async function POST(request: Request) {
       layout,
       readLogo: (stored) => defaultTapStore.readLogo(stored),
     });
+
+    if (typeof raw.device === "string" && raw.device) {
+      const adapter = getDisplay(raw.device);
+      if (adapter?.simulate) {
+        png = await adapter.simulate(png);
+      }
+    }
 
     return new Response(new Uint8Array(png), {
       headers: {

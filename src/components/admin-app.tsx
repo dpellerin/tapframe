@@ -7,7 +7,6 @@ import {
 } from "@/lib/display/layout";
 import type { DisplayManifest, DisplaySettings } from "@/lib/display/types";
 import { DEFAULT_DISPLAY } from "@/lib/display/types";
-import { fitPreviewCanvas } from "@/lib/preview-sizes";
 import { DEFAULT_TITLE, parseMenu, quietSubtitle, type Tap } from "@/lib/taps";
 import { DisplaySettingsDialog } from "./display-settings-dialog";
 import { TapEditor, type TapDraft } from "./tap-editor";
@@ -40,7 +39,6 @@ export function AdminApp({
   const [busy, setBusy] = useState<"save" | "render" | "send" | null>(null);
   const [libraryLogos, setLibraryLogos] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
-  const previewFrameRef = useRef<HTMLDivElement>(null);
   const previewSectionRef = useRef<HTMLElement>(null);
   const lastSnapshotRef = useRef<string | null>(null);
 
@@ -239,20 +237,11 @@ export function AdminApp({
       return;
     }
 
-    const box = previewFrameRef.current;
-    const previewCanvas = fitPreviewCanvas({
-      boxWidth: box?.clientWidth ?? 800,
-      boxHeight: box?.clientHeight ?? 480,
-      aspectWidth: size.width,
-      aspectHeight: size.height,
-      devicePixelRatio: window.devicePixelRatio,
-    });
-
     setBusy("render");
     setError(null);
     setStatus(null);
     try {
-      const previewBlob = await requestPng(parsed.menu, previewCanvas, layout);
+      const previewBlob = await requestPng(parsed.menu, size, layout, display.adapter);
       const url = URL.createObjectURL(previewBlob);
       setPreviewUrl((current) => {
         if (current) {
@@ -260,6 +249,7 @@ export function AdminApp({
         }
         return url;
       });
+      setFrameBlob(previewBlob);
       requestAnimationFrame(() => {
         requestAnimationFrame(() => {
           previewSectionRef.current?.scrollIntoView({
@@ -268,13 +258,6 @@ export function AdminApp({
           });
         });
       });
-      void requestPng(parsed.menu, size, layout)
-        .then((blob) => {
-          setFrameBlob(blob);
-        })
-        .catch(() => {
-          setFrameBlob(null);
-        });
     } catch {
       setError("Could not generate a preview.");
     } finally {
@@ -431,7 +414,6 @@ export function AdminApp({
             </p>
           ) : null}
           <div
-            ref={previewFrameRef}
             className="flex w-full items-center justify-center"
             style={{
               aspectRatio: `${previewSize.width} / ${previewSize.height}`,
@@ -461,6 +443,7 @@ async function requestPng(
   menu: { title: string; subtitle: string; taps: unknown },
   canvas: { width: number; height: number },
   layout: { maxPerRow: number; rows: number },
+  device?: string,
 ): Promise<Blob> {
   const response = await fetch("/api/render", {
     method: "POST",
@@ -472,6 +455,7 @@ async function requestPng(
       width: canvas.width,
       height: canvas.height,
       layout,
+      ...(device ? { device } : {}),
     }),
   });
   if (!response.ok) {

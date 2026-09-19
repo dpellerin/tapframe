@@ -24,7 +24,8 @@ export type RenderMenuOptions = MenuCanvas & {
 const PAPER = "#f7f4ee";
 const INK = "#1c1a17";
 const MUTED = "#322f2b";
-const RULE = "#d4cfc4";
+// Quantizes to black on the Spectra panel (luma < 0.55), so rules stay visible.
+const RULE = "#8a857c";
 const SERIF = "Source Serif 4";
 const SANS = "Source Sans 3";
 
@@ -211,7 +212,7 @@ function headerSvg(options: {
   ${marks}
   <text x="${width / 2}" y="${titleY}" text-anchor="middle" font-family="${SERIF}" font-weight="600" font-size="${titleSize}" fill="${INK}">${escapeXml(title)}</text>
   ${kicker}
-  <line x1="${margin}" y1="${headerBottom - Math.round(height * 0.016)}" x2="${width - margin}" y2="${headerBottom - Math.round(height * 0.016)}" stroke="${RULE}" stroke-width="1"/>`;
+  <line x1="${margin}" y1="${headerBottom - Math.round(height * 0.016)}" x2="${width - margin}" y2="${headerBottom - Math.round(height * 0.016)}" stroke="${RULE}" stroke-width="2" shape-rendering="crispEdges"/>`;
 }
 
 function emptyBoard(
@@ -336,7 +337,7 @@ function cardSvg(options: {
   const ruleBottom = startY + groupHeight;
   const rule =
     showRule && gap > 0
-      ? `<line x1="${ruleX}" y1="${ruleTop}" x2="${ruleX}" y2="${ruleBottom}" stroke="${RULE}" stroke-width="1"/>`
+      ? `<line x1="${ruleX}" y1="${ruleTop}" x2="${ruleX}" y2="${ruleBottom}" stroke="${RULE}" stroke-width="2" shape-rendering="crispEdges"/>`
       : "";
 
   return `

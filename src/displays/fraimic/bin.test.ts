@@ -10,6 +10,7 @@ import {
   panelForSource,
   pngToFraimicBin,
   rotateCw90,
+  simulateFraimicPng,
 } from "./bin";
 
 describe("panelForSource", () => {
@@ -125,5 +126,26 @@ describe("pngToFraimicBin", () => {
     const packed = await pngToFraimicBin(png, 1600, 1200);
     expect(packed.length).toBe(EL133.binSize);
     expect(packed[0]).toBe(0x11);
+  });
+});
+
+describe("simulateFraimicPng", () => {
+  it("drops the gray rules to white like the panel does", async () => {
+    const png = await sharp({
+      create: {
+        width: 4,
+        height: 1,
+        channels: 3,
+        background: { r: 212, g: 207, b: 196 },
+      },
+    })
+      .png()
+      .toBuffer();
+
+    const simulated = await simulateFraimicPng(png);
+    const decoded = await sharp(simulated).raw().toBuffer({
+      resolveWithObject: true,
+    });
+    expect([...decoded.data]).toEqual([255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255, 255]);
   });
 });

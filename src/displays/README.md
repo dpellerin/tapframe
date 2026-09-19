@@ -25,6 +25,7 @@ Fraimic (`src/displays/fraimic/`) is the reference. Device-only work (Spectra `.
 type DisplayAdapter = {
   manifest: DisplayManifest;
   send: (context: SendContext) => Promise<SendResult>;
+  simulate?: (png: Buffer) => Promise<Buffer>;
 };
 ```
 
@@ -37,6 +38,8 @@ type DisplayAdapter = {
 | `settings` | Values for the fields you declared (`host`, `token`, …) |
 
 Return `{ ok: true, message? }` or `{ ok: false, error }`. Convert the PNG if the device needs another format. Do not read tap files or call the renderer.
+
+Optional `simulate` re-colors a rendered PNG the way the device will show it. The admin preview sends the device `id` with `/api/render` and displays the result, so the preview matches the frame.
 
 ## Manifest
 
