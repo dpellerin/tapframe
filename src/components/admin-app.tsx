@@ -7,7 +7,13 @@ import {
 } from "@/lib/display/layout";
 import type { DisplayManifest, DisplaySettings } from "@/lib/display/types";
 import { DEFAULT_DISPLAY } from "@/lib/display/types";
-import { DEFAULT_TITLE, parseMenu, quietSubtitle, type Tap } from "@/lib/taps";
+import {
+  DEFAULT_TITLE,
+  parseMenu,
+  quietSubtitle,
+  type Menu,
+  type Tap,
+} from "@/lib/taps";
 import { DisplaySettingsDialog } from "./display-settings-dialog";
 import { TapEditor, type TapDraft } from "./tap-editor";
 
@@ -36,11 +42,14 @@ export function AdminApp({
   const [frameBlob, setFrameBlob] = useState<Blob | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState<"save" | "render" | "send" | null>(null);
+  const [busy, setBusy] = useState<"render" | "send" | null>(null);
+  const [saving, setSaving] = useState(false);
   const [libraryLogos, setLibraryLogos] = useState<string[]>([]);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const previewSectionRef = useRef<HTMLElement>(null);
   const lastSnapshotRef = useRef<string | null>(null);
+  const saveChainRef = useRef<Promise<void>>(Promise.resolve());
+  const pendingSaveCountRef = useRef(0);
 
   useEffect(() => {
     return () => {
@@ -65,34 +74,51 @@ export function AdminApp({
     }
     lastSnapshotRef.current = snapshot;
 
-    const save = async () => {
+    const queueSave = () => {
       const parsed = parseMenu({ title, subtitle, taps: taps.map(stripKey) });
       if (!parsed.ok) {
         setStatus("Not saved yet.");
         return;
       }
-      setBusy("save");
+
+      const menu: Menu = parsed.menu;
+      pendingSaveCountRef.current += 1;
+      setSaving(true);
       setError(null);
-      try {
-        const response = await fetch("/api/taps", {
-          method: "PUT",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(parsed.menu),
+
+      saveChainRef.current = saveChainRef.current
+        .then(async () => {
+          try {
+            const response = await fetch("/api/taps", {
+              method: "PUT",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify(menu),
+            });
+            const payload = (await response.json()) as { error?: string };
+            if (!response.ok) {
+              if (lastSnapshotRef.current === snapshot) {
+                setError(payload.error ?? "Could not save.");
+              }
+              return;
+            }
+            if (lastSnapshotRef.current === snapshot) {
+              setStatus("Saved.");
+            }
+          } catch {
+            if (lastSnapshotRef.current === snapshot) {
+              setError("Could not save.");
+            }
+          }
+        })
+        .finally(() => {
+          pendingSaveCountRef.current -= 1;
+          if (pendingSaveCountRef.current === 0) {
+            setSaving(false);
+          }
         });
-        const payload = (await response.json()) as { error?: string };
-        if (!response.ok) {
-          setError(payload.error ?? "Could not save.");
-          return;
-        }
-        setStatus("Saved.");
-      } catch {
-        setError("Could not save.");
-      } finally {
-        setBusy(null);
-      }
     };
 
-    const timer = setTimeout(() => void save(), 1000);
+    const timer = setTimeout(queueSave, 1000);
     return () => clearTimeout(timer);
   }, [title, subtitle, taps]);
 
@@ -277,7 +303,7 @@ export function AdminApp({
           <button
             type="button"
             onClick={() => void generate()}
-            disabled={busy !== null || taps.length === 0}
+            disabled={busy !== null || saving || taps.length === 0}
             className="rounded-full bg-stone-900 px-4 py-2 text-sm text-white hover:bg-stone-800 disabled:opacity-40"
           >
             {busy === "render" ? "Generating…" : "Generate preview"}
@@ -285,7 +311,7 @@ export function AdminApp({
           <button
             type="button"
             onClick={() => void send()}
-            disabled={busy !== null || taps.length === 0 || !activeDisplay}
+            disabled={busy !== null || saving || taps.length === 0 || !activeDisplay}
             className="rounded-full border border-stone-900 px-4 py-2 text-sm text-stone-900 hover:bg-white disabled:opacity-40"
           >
             {busy === "send" ? "Sending…" : "Send"}
@@ -307,7 +333,7 @@ export function AdminApp({
         <p className="mb-4 text-sm text-red-700" role="alert">
           {error}
         </p>
-      ) : busy === "save" ? (
+      ) : saving ? (
         <p className="mb-4 text-sm text-stone-500">Saving…</p>
       ) : status ? (
         <p className="mb-4 text-sm text-stone-500">{status}</p>

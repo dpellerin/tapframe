@@ -187,6 +187,64 @@ describe("AdminApp", () => {
     });
   });
 
+  it("serializes autosaves so an older request cannot overwrite a newer edit", async () => {
+    let releaseFirstSave: (() => void) | undefined;
+    const firstSaveBlocked = new Promise<void>((resolve) => {
+      releaseFirstSave = resolve;
+    });
+    const savedTitles: string[] = [];
+    const fetchMock = vi.fn(
+      async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input);
+        if (url === "/api/logos") {
+          return new Response(JSON.stringify({ logos: [] }), { status: 200 });
+        }
+        if (url === "/api/taps") {
+          const menu = JSON.parse(String(init?.body)) as { title: string };
+          savedTitles.push(menu.title);
+          if (savedTitles.length === 1) {
+            await firstSaveBlocked;
+          }
+          return new Response("{}", { status: 200 });
+        }
+        return new Response("{}", { status: 200 });
+      },
+    );
+    vi.stubGlobal("fetch", fetchMock);
+    const user = userEvent.setup();
+    render(
+      <AdminApp
+        initialTaps={[
+          {
+            name: "Helles",
+            style: "Lager",
+            abv: 4.8,
+            description: "Crisp.",
+          },
+        ]}
+      />,
+    );
+
+    const headline = screen.getByLabelText("Headline");
+    await user.clear(headline);
+    await user.type(headline, "First edit");
+    await waitFor(() => expect(savedTitles).toEqual(["First edit"]), {
+      timeout: 3000,
+    });
+
+    await user.clear(headline);
+    await user.type(headline, "Newest edit");
+    await new Promise((resolve) => setTimeout(resolve, 1200));
+    expect(savedTitles).toEqual(["First edit"]);
+
+    releaseFirstSave?.();
+    await waitFor(
+      () => expect(savedTitles).toEqual(["First edit", "Newest edit"]),
+      { timeout: 3000 },
+    );
+    expect(await screen.findByText("Saved.")).toBeInTheDocument();
+  });
+
   it("hides add once the selected display is full", () => {
     render(
       <AdminApp
